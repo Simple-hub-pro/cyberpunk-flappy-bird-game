@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyberpunk Flappy Bird</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0a0a0a, #1a0d2e, #16213e);
+            font-family: 'Orbitron', monospace;
+            overflow: hidden;
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(255, 0, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(0, 255, 255, 0.1) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
+        }
+        
+        #gameContainer {
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 15px;
+            border: 2px solid #00ffff;
+            box-shadow: 
+                0 0 20px rgba(0, 255, 255, 0.5),
+                inset 0 0 20px rgba(0, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        #gameCanvas {
+            border: 3px solid #ff00ff;
+            border-radius: 10px;
+            box-shadow: 
+                0 0 30px rgba(255, 0, 255, 0.7),
+                inset 0 0 30px rgba(255, 0, 255, 0.1);
+            background: linear-gradient(to bottom, #0a0a0a 0%, #1a0d2e 50%, #16213e 100%);
+        }
+        
+        #score {
+            font-size: 28px;
+            font-weight: 900;
+            color: #00ffff;
+            margin: 10px 0;
+            text-shadow: 
+                0 0 10px #00ffff,
+                0 0 20px #00ffff,
+                0 0 30px #00ffff;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        #instructions {
+            color: #ff00ff;
+            margin: 10px 0;
+            font-size: 14px;
+            text-shadow: 
+                0 0 5px #ff00ff,
+                0 0 10px #ff00ff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95);
+            color: #00ffff;
+            padding: 30px;
+            border-radius: 15px;
+            border: 2px solid #ff00ff;
+            box-shadow: 
+                0 0 30px rgba(255, 0, 255, 0.8),
+                inset 0 0 20px rgba(0, 255, 255, 0.1);
+            text-align: center;
+            display: none;
+        }
+        
+        #gameOver h2 {
+            color: #ff00ff;
+            text-shadow: 
+                0 0 10px #ff00ff,
+                0 0 20px #ff00ff;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #ff00ff, #00ffff);
+            border: 2px solid #ffffff;
+            color: #000;
+            padding: 15px 30px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            margin: 10px;
+            font-family: 'Orbitron', monospace;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+        }
+        
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 
+                0 0 25px rgba(0, 255, 255, 0.8),
+                0 0 35px rgba(255, 0, 255, 0.6);
+        }
+        
+        button:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="score">SCORE: 0 | LEVEL: 1</div>
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+        <div id="instructions">CLICK OR PRESS SPACE TO BOOST!</div>
+        
+        <div id="gameOver">
+            <h2>SYSTEM FAILURE!</h2>
+            <p>FINAL SCORE: <span id="finalScore">0</span></p>
+            <button onclick="restartGame()">REBOOT SYSTEM</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const gameOverElement = document.getElementById('gameOver');
+        const finalScoreElement = document.getElementById('finalScore');
+
+        // Game variables
+        let gameState = 'playing';
+        let score = 0;
+        let frameCount = 0;
+        let level = 1;
+        let nextLevelScore = 5; // Level up every 5 points
+
+        // Cyberpunk drone (bird replacement)
+        const drone = {
+            x: 80,
+            y: canvas.height / 2,
+            width: 35,
+            height: 25,
+            velocity: 0,
+            gravity: 0.3, // Reduced initial gravity
+            jumpPower: -8, // Reduced jump power for easier control
+            glowColor: '#00ffff'
+        };
+
+        // Cyber obstacles array
+        let obstacles = [];
+        const obstacleWidth = 60;
+        let obstacleGap = 200; // Larger initial gap
+        let obstacleSpeed = 1.5; // Slower initial speed
+        const pipeInterval = 150; // Longer intervals between obstacles
+
+        // Particle system for effects
+        let particles = [];
+
+        function init() {
+            obstacles = [];
+            particles = [];
+            drone.y = canvas.height / 2;
+            drone.velocity = 0;
+            score = 0;
+            frameCount = 0;
+            level = 1;
+            nextLevelScore = 5;
+            obstacleGap = 200; // Reset to easy gap
+            obstacleSpeed = 1.5; // Reset to slow speed
+            drone.gravity = 0.3; // Reset to easy gravity
+            gameState = 'playing';
+            gameOverElement.style.display = 'none';
+            updateScore();
+            gameLoop();
+        }
+
+        function createObstacle() {
+            const minHeight = 50;
+            const maxHeight = canvas.height - obstacleGap - minHeight;
+            const topHeight = Math.random() * (maxHeight - minHeight) + minHeight;
+            
+            obstacles.push({
+                x: canvas.width,
+                topHeight: topHeight,
+                bottomY: topHeight + obstacleGap,
+                bottomHeight: canvas.height - (topHeight + obstacleGap),
+                passed: false,
+                glowIntensity: Math.random() * 0.5 + 0.5
+            });
+        }
+
+        function createParticle(x, y, color) {
+            particles.push({
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 4,
+                vy: (Math.random() - 0.5) * 4,
+                life: 1.0,
+                decay: Math.random() * 0.02 + 0.01,
+                color: color,
+                size: Math.random() * 3 + 1
+            });
+        }
+
+        function updateDrone() {
+            if (gameState !== 'playing') return;
+            
+            drone.velocity += drone.gravity;
+            drone.y += drone.velocity;
+
+            // Create trail particles
+            if (frameCount % 3 === 0) {
+                createParticle(drone.x, drone.y + drone.height/2, drone.glowColor);
+            }
+
+            if (drone.y < 0) {
+                drone.y = 0;
+                drone.velocity = 0;
+            }
+            if (drone.y + drone.height > canvas.height) {
+                gameOver();
+            }
+        }
+
+        function updateObstacles() {
+            if (gameState !== 'playing') return;
+            
+            if (frameCount % pipeInterval === 0) {
+                createObstacle();
+            }
+
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obstacle = obstacles[i];
+                obstacle.x -= obstacleSpeed;
+
+                if (obstacle.x + obstacleWidth < 0) {
+                    obstacles.splice(i, 1);
+                    continue;
+                }
+
+                if (!obstacle.passed && obstacle.x + obstacleWidth < drone.x) {
+                    obstacle.passed = true;
+                    score++;
+                    updateScore();
+                    checkLevelUp();
+                    
+                    // Create score particles
+                    for (let j = 0; j < 10; j++) {
+                        createParticle(drone.x, drone.y, '#00ff00');
+                    }
+                }
+
+                if (checkCollision(drone, obstacle)) {
+                    gameOver();
+                }
+            }
+        }
+
+        function checkLevelUp() {
+            if (score >= nextLevelScore) {
+                level++;
+                nextLevelScore += Math.ceil(level * 1.5) + 3; // Progressive score requirements
+                
+                // Gradually increase difficulty
+                obstacleSpeed = Math.min(obstacleSpeed + 0.2, 3.5); // Max speed cap
+                obstacleGap = Math.max(obstacleGap - 8, 120); // Min gap cap
+                drone.gravity = Math.min(drone.gravity + 0.03, 0.6); // Max gravity cap
+                
+                // Level up visual effect
+                for (let i = 0; i < 20; i++) {
+                    createParticle(
+                        drone.x + Math.random() * 50, 
+                        drone.y + Math.random() * 50, 
+                        '#ffff00'
+                    );
+                }
+            }
+        }
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= p.decay;
+                
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function checkCollision(drone, obstacle) {
+            if (drone.x < obstacle.x + obstacleWidth &&
+                drone.x + drone.width > obstacle.x) {
+                if (drone.y < obstacle.topHeight ||
+                    drone.y + drone.height > obstacle.bottomY) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function drawDrone() {
+            ctx.save();
+            
+            // Glow effect
+            ctx.shadowColor = drone.glowColor;
+            ctx.shadowBlur = 20;
+            
+            // Main body
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(drone.x, drone.y, drone.width, drone.height);
+            
+            // Neon outlines
+            ctx.strokeStyle = drone.glowColor;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(drone.x, drone.y, drone.width, drone.height);
+            
+            // Propellers
+            ctx.fillStyle = drone.glowColor;
+            ctx.fillRect(drone.x - 5, drone.y + 5, 8, 3);
+            ctx.fillRect(drone.x - 5, drone.y + 17, 8, 3);
+            ctx.fillRect(drone.x + drone.width - 3, drone.y + 5, 8, 3);
+            ctx.fillRect(drone.x + drone.width - 3, drone.y + 17, 8, 3);
+            
+            // LED lights
+            ctx.fillStyle = '#ff00ff';
+            ctx.beginPath();
+            ctx.arc(drone.x + 5, drone.y + 8, 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = '#00ff00';
+            ctx.beginPath();
+            ctx.arc(drone.x + drone.width - 5, drone.y + 8, 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.restore();
+        }
+
+        function drawObstacles() {
+            obstacles.forEach(obstacle => {
+                ctx.save();
+                
+                // Glow effect
+                ctx.shadowColor = '#ff00ff';
+                ctx.shadowBlur = 15 * obstacle.glowIntensity;
+                
+                // Main structure
+                ctx.fillStyle = '#1a1a1a';
+                ctx.fillRect(obstacle.x, 0, obstacleWidth, obstacle.topHeight);
+                ctx.fillRect(obstacle.x, obstacle.bottomY, obstacleWidth, obstacle.bottomHeight);
+                
+                // Neon grid pattern
+                ctx.strokeStyle = '#ff00ff';
+                ctx.lineWidth = 1;
+                
+                for (let i = 0; i < obstacle.topHeight; i += 20) {
+                    ctx.beginPath();
+                    ctx.moveTo(obstacle.x, i);
+                    ctx.lineTo(obstacle.x + obstacleWidth, i);
+                    ctx.stroke();
+                }
+                
+                for (let i = obstacle.bottomY; i < canvas.height; i += 20) {
+                    ctx.beginPath();
+                    ctx.moveTo(obstacle.x, i);
+                    ctx.lineTo(obstacle.x + obstacleWidth, i);
+                    ctx.stroke();
+                }
+                
+                for (let i = 0; i < obstacleWidth; i += 15) {
+                    ctx.beginPath();
+                    ctx.moveTo(obstacle.x + i, 0);
+                    ctx.lineTo(obstacle.x + i, obstacle.topHeight);
+                    ctx.stroke();
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(obstacle.x + i, obstacle.bottomY);
+                    ctx.lineTo(obstacle.x + i, canvas.height);
+                    ctx.stroke();
+                }
+                
+                // Bright edges
+                ctx.strokeStyle = '#00ffff';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(obstacle.x, 0, obstacleWidth, obstacle.topHeight);
+                ctx.strokeRect(obstacle.x, obstacle.bottomY, obstacleWidth, obstacle.bottomHeight);
+                
+                ctx.restore();
+            });
+        }
+
+        function drawParticles() {
+            particles.forEach(p => {
+                ctx.save();
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.shadowColor = p.color;
+                ctx.shadowBlur = 10;
+                
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+        }
+
+        function drawBackground() {
+            // Animated grid
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.1)';
+            ctx.lineWidth = 1;
+            
+            const gridSize = 30;
+            const offsetX = (frameCount * 0.5) % gridSize;
+            const offsetY = (frameCount * 0.3) % gridSize;
+            
+            for (let x = -offsetX; x < canvas.width + gridSize; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            
+            for (let y = -offsetY; y < canvas.height + gridSize; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            
+            // Floating data streams
+            ctx.fillStyle = 'rgba(255, 0, 255, 0.3)';
+            ctx.font = '12px Orbitron';
+            for (let i = 0; i < 5; i++) {
+                const x = (frameCount * (1 + i * 0.2)) % (canvas.width + 100) - 50;
+                const y = 50 + i * 100;
+                ctx.fillText('01001010', x, y);
+            }
+        }
+
+        function render() {
+            // Clear with slight trail effect
+            ctx.fillStyle = 'rgba(10, 10, 10, 0.1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            drawBackground();
+            drawParticles();
+            drawObstacles();
+            drawDrone();
+        }
+
+        function gameLoop() {
+            if (gameState === 'playing') {
+                frameCount++;
+                updateDrone();
+                updateObstacles();
+                updateParticles();
+            }
+            
+            render();
+            
+            if (gameState === 'playing') {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        function jump() {
+            if (gameState === 'playing') {
+                drone.velocity = drone.jumpPower;
+                // Create boost particles
+                for (let i = 0; i < 5; i++) {
+                    createParticle(drone.x, drone.y + drone.height, '#00ffff');
+                }
+            }
+        }
+
+        function gameOver() {
+            gameState = 'gameOver';
+            finalScoreElement.textContent = score;
+            gameOverElement.style.display = 'block';
+            
+            // Explosion particles
+            for (let i = 0; i < 30; i++) {
+                createParticle(drone.x + drone.width/2, drone.y + drone.height/2, '#ff0000');
+            }
+        }
+
+        function restartGame() {
+            init();
+        }
+
+        function updateScore() {
+            scoreElement.textContent = `SCORE: ${score} | LEVEL: ${level}`;
+        }
+
+        canvas.addEventListener('click', jump);
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                jump();
+            }
+        });
+
+        init();
+    </script>
+</body>
+</html>
